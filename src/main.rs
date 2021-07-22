@@ -1,10 +1,7 @@
-use std::alloc::handle_alloc_error;
-use std::fs;
 use std::io::{Read, Result as IoResult, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{mpsc, Arc, LockResult, Mutex, MutexGuard};
 use std::thread;
-use std::time::Duration;
 
 fn main() {
     println!("Started: Echo Server!");
@@ -92,15 +89,23 @@ impl ThreadPool {
 
 impl Drop for ThreadPool {
     fn drop(&mut self) {
+        println!("Terminating thread pool responsible for request processing");
+
         for _ in 0..self.workers.len() {
             self.sender.send(Operation::Terminate).unwrap();
+        }
+
+        for worker in &mut self.workers {
+            if let Some(worker) = worker.thread.take() {
+                worker.join().unwrap();
+            }
         }
     }
 }
 
 struct Worker {
     id: usize,
-    thread: thread::JoinHandle<()>,
+    thread: Option<thread::JoinHandle<()>>,
 }
 
 type SharedReceiver = Arc<Mutex<mpsc::Receiver<Operation>>>;
@@ -127,6 +132,9 @@ impl Worker {
             }
         });
 
-        Worker { id, thread }
+        Worker {
+            id,
+            thread: Some(thread),
+        }
     }
 }
